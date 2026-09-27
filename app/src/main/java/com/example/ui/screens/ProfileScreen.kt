@@ -28,6 +28,9 @@ import com.example.ui.theme.*
 @Composable
 fun ProfileScreen(
     userPreferences: UserPreferencesEntity?,
+    isGoogleSignedIn: Boolean = true,
+    onGoogleSignIn: () -> Unit = {},
+    onSignOut: () -> Unit = {},
     onSavePreferences: (displayName: String, email: String, defaultLang: String, defaultMode: String) -> Unit
 ) {
     var displayName by remember(userPreferences) {
@@ -93,30 +96,62 @@ fun ProfileScreen(
                         color = SabiTextSecondary
                     )
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = SabiNavyElevated,
-                        border = androidx.compose.foundation.BorderStroke(1.dp, SabiNavyBorder)
-                    ) {
+                    if (isGoogleSignedIn) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Icon(
-                                Icons.Default.CheckCircle,
-                                contentDescription = null,
-                                tint = SabiGreenGlow,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Google Identity Connected",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = SabiGreenGlow,
-                                fontWeight = FontWeight.SemiBold
-                            )
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = SabiNavyElevated,
+                                border = androidx.compose.foundation.BorderStroke(1.dp, SabiNavyBorder)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        Icons.Default.CheckCircle,
+                                        contentDescription = null,
+                                        tint = SabiGreenGlow,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "Google Identity Connected",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = SabiGreenGlow,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+
+                            OutlinedButton(
+                                onClick = onSignOut,
+                                modifier = Modifier
+                                    .height(36.dp)
+                                    .testTag("google_sign_out_button"),
+                                shape = RoundedCornerShape(10.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, SabiNavyBorder)
+                            ) {
+                                Text("Sign Out", style = MaterialTheme.typography.labelSmall, color = SabiTextSecondary)
+                            }
+                        }
+                    } else {
+                        Button(
+                            onClick = onGoogleSignIn,
+                            colors = ButtonDefaults.buttonColors(containerColor = SabiGreenPrimary),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(46.dp)
+                                .testTag("google_sign_in_button")
+                        ) {
+                            Icon(Icons.Default.AccountCircle, contentDescription = null, tint = Color.Black)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Sign in with Google", color = Color.Black, fontWeight = FontWeight.Bold)
                         }
                     }
                 }

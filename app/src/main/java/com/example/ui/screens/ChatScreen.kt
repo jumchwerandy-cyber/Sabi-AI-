@@ -133,6 +133,46 @@ fun ChatScreen(
             contentPadding = PaddingValues(vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            if (messages.isEmpty() && !isLoading) {
+                item {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 32.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = SabiGreenContainer,
+                            modifier = Modifier.size(56.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    Icons.Default.ChatBubbleOutline,
+                                    contentDescription = null,
+                                    tint = SabiGreenGlow,
+                                    modifier = Modifier.size(28.dp)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "Start a New Conversation",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = SabiTextPrimary
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Stored locally on your device with Room for offline access",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = SabiTextSecondary,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                    }
+                }
+            }
+
             items(messages, key = { it.id }) { message ->
                 ChatMessageItem(
                     message = message,
@@ -265,28 +305,63 @@ fun ChatScreen(
                         }
 
                         is VoiceState.Error -> {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
+                            Column(modifier = Modifier.fillMaxWidth()) {
                                 Row(
+                                    modifier = Modifier.fillMaxWidth(),
                                     verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.weight(1f)
+                                    horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = SabiError)
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = voiceState.message,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = SabiTextPrimary
-                                    )
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = SabiError)
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = voiceState.message,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = SabiTextPrimary
+                                        )
+                                    }
+                                    TextButton(
+                                        onClick = onCancelVoice,
+                                        modifier = Modifier.testTag("voice_error_dismiss")
+                                    ) {
+                                        Text("Dismiss", color = SabiTextSecondary)
+                                    }
                                 }
-                                TextButton(
-                                    onClick = onCancelVoice,
-                                    modifier = Modifier.testTag("voice_error_dismiss")
+
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = "Tap a spoken phrase to transcribe directly into chat box:",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = SabiGold
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                LazyRow(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text("Dismiss", color = SabiTextSecondary)
+                                    items(com.example.ui.voice.VoiceInputManager.SAMPLE_VOICE_PROMPTS) { sample ->
+                                        Surface(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .clickable {
+                                                    onInputTextChange(sample)
+                                                    onCancelVoice()
+                                                }
+                                                .testTag("sample_voice_chip_${sample.take(8).lowercase()}"),
+                                            color = SabiNavySurface,
+                                            border = androidx.compose.foundation.BorderStroke(1.dp, SabiNavyBorder)
+                                        ) {
+                                            Text(
+                                                text = "🎙️ $sample",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = SabiTextPrimary,
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }

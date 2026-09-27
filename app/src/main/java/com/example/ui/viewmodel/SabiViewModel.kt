@@ -37,8 +37,19 @@ class SabiViewModel(
     private val _currentScreen = MutableStateFlow(SabiScreen.LANDING)
     val currentScreen: StateFlow<SabiScreen> = _currentScreen.asStateFlow()
 
-    val conversations: StateFlow<List<ConversationEntity>> = repository.conversations
+    private val _conversationSearchQuery = MutableStateFlow("")
+    val conversationSearchQuery: StateFlow<String> = _conversationSearchQuery.asStateFlow()
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val conversations: StateFlow<List<ConversationEntity>> = _conversationSearchQuery
+        .flatMapLatest { query -> repository.searchConversations(query) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val totalConversationCount: StateFlow<Int> = repository.totalConversationCount
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 1)
+
+    val totalMessageCount: StateFlow<Int> = repository.totalMessageCount
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 2)
 
     val allFeedback: StateFlow<List<FeedbackEntity>> = repository.allFeedback
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -116,8 +127,38 @@ class SabiViewModel(
     private val _isAssistantProcessing = MutableStateFlow(false)
     val isAssistantProcessing: StateFlow<Boolean> = _isAssistantProcessing.asStateFlow()
 
+    // Admin Firestore Aggregated Metrics
+    private val _firestoreMetrics = MutableStateFlow(com.example.data.remote.FirestoreAggregatedMetrics())
+    val firestoreMetrics: StateFlow<com.example.data.remote.FirestoreAggregatedMetrics> = _firestoreMetrics.asStateFlow()
+
+    private val _isLoadingMetrics = MutableStateFlow(false)
+    val isLoadingMetrics: StateFlow<Boolean> = _isLoadingMetrics.asStateFlow()
+
+    init {
+        refreshFirestoreMetrics()
+    }
+
+    fun refreshFirestoreMetrics() {
+        viewModelScope.launch {
+            _isLoadingMetrics.value = true
+            try {
+                val convCount = conversations.value.size
+                val msgCount = totalMessageCount.value
+                val metrics = repository.getFirestoreAggregatedMetrics(convCount, msgCount)
+                _firestoreMetrics.value = metrics
+            } catch (e: Exception) {
+                // Keep current metrics safely
+            } finally {
+                _isLoadingMetrics.value = false
+            }
+        }
+    }
+
     fun navigateTo(screen: SabiScreen) {
         _currentScreen.value = screen
+        if (screen == SabiScreen.ADMIN) {
+            refreshFirestoreMetrics()
+        }
     }
 
     fun setInputText(text: String) {
@@ -191,6 +232,24 @@ class SabiViewModel(
                 val remaining = conversations.value.filter { it.id != id }
                 _activeConversationId.value = remaining.firstOrNull()?.id
             }
+        }
+    }
+
+    fun setConversationSearchQuery(query: String) {
+        _conversationSearchQuery.value = query
+    }
+
+    fun togglePinConversation(id: String, currentPinned: Boolean) {
+        viewModelScope.launch {
+            repository.setConversationPinned(id, !currentPinned)
+        }
+    }
+
+    fun clearAllConversationHistory() {
+        viewModelScope.launch {
+            repository.deleteAllConversations()
+            startNewChat()
+            _snackbarMessage.value = "All past conversation sessions cleared."
         }
     }
 

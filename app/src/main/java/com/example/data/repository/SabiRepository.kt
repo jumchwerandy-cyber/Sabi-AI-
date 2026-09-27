@@ -19,13 +19,29 @@ import java.util.UUID
 
 class SabiRepository(
     private val sabiDao: SabiDao,
-    private val aiService: SabiAiBackendService = SabiAiBackendServiceImpl()
+    private val aiService: SabiAiBackendService = SabiAiBackendServiceImpl(),
+    val preferencesDataStore: com.example.data.local.SabiPreferencesDataStore? = null,
+    val firestoreService: com.example.data.remote.SabiFirestoreService = com.example.data.remote.SabiFirestoreService()
 ) {
 
     val conversations: Flow<List<ConversationEntity>> = sabiDao.getAllConversations()
     val allFeedback: Flow<List<FeedbackEntity>> = sabiDao.getAllFeedback()
     val userPreferences: Flow<UserPreferencesEntity?> = sabiDao.getUserPreferences()
     val documents: Flow<List<DocumentEntity>> = sabiDao.getAllDocuments()
+
+    val dataStoreLanguage: Flow<String>? = preferencesDataStore?.selectedLanguage
+    val dataStoreMode: Flow<String>? = preferencesDataStore?.selectedMode
+    val dataStoreActiveModel: Flow<String>? = preferencesDataStore?.activeModelId
+
+    suspend fun saveCachedPreferences(lang: String, mode: String, model: String) {
+        preferencesDataStore?.saveSelectedLanguage(lang)
+        preferencesDataStore?.saveSelectedMode(mode)
+        preferencesDataStore?.saveActiveModel(model)
+    }
+
+    suspend fun saveLastActiveConversation(convId: String) {
+        preferencesDataStore?.saveLastConversationId(convId)
+    }
 
     fun getMessagesForConversation(convId: String): Flow<List<MessageEntity>> {
         return sabiDao.getMessagesForConversation(convId)
@@ -44,11 +60,35 @@ class SabiRepository(
             mode = mode.id
         )
         sabiDao.insertConversation(conv)
+        firestoreService.syncConversation(conv)
         return id
+    }
+
+    val totalConversationCount: Flow<Int> = sabiDao.getConversationCount()
+    val totalMessageCount: Flow<Int> = sabiDao.getTotalMessageCount()
+
+    fun searchConversations(query: String): Flow<List<ConversationEntity>> {
+        return if (query.isBlank()) {
+            sabiDao.getAllConversations()
+        } else {
+            sabiDao.searchConversations(query.trim())
+        }
+    }
+
+    fun searchMessages(query: String): Flow<List<MessageEntity>> {
+        return sabiDao.searchMessages(query.trim())
+    }
+
+    suspend fun setConversationPinned(id: String, isPinned: Boolean) {
+        sabiDao.setConversationPinned(id, isPinned)
     }
 
     suspend fun deleteConversation(id: String) {
         sabiDao.deleteConversationById(id)
+    }
+
+    suspend fun deleteAllConversations() {
+        sabiDao.deleteAllConversations()
     }
 
     suspend fun updateConversationTitle(id: String, newTitle: String) {
@@ -76,6 +116,7 @@ class SabiRepository(
             mode = mode.id
         )
         sabiDao.insertMessage(userMessage)
+        firestoreService.syncMessage(userMessage)
 
         // Retrieve existing history
         val history = sabiDao.getMessageListForConversation(conversationId)
@@ -135,6 +176,7 @@ class SabiRepository(
             mode = mode.id
         )
         sabiDao.insertMessage(aiMessage)
+        firestoreService.syncMessage(aiMessage)
 
         // Update conversation's last message and timestamp
         val conv = sabiDao.getConversationById(conversationId)
@@ -144,15 +186,15 @@ class SabiRepository(
             } else {
                 conv.title
             }
-            sabiDao.updateConversation(
-                conv.copy(
-                    title = updatedTitle,
-                    lastMessage = aiResponse.response.take(64),
-                    updatedAt = System.currentTimeMillis(),
-                    language = language.id,
-                    mode = mode.id
-                )
+            val updatedConv = conv.copy(
+                title = updatedTitle,
+                lastMessage = aiResponse.response.take(64),
+                updatedAt = System.currentTimeMillis(),
+                language = language.id,
+                mode = mode.id
             )
+            sabiDao.updateConversation(updatedConv)
+            firestoreService.syncConversation(updatedConv)
         }
 
         return aiResponse
@@ -190,6 +232,7 @@ class SabiRepository(
             reviewed = false
         )
         sabiDao.insertFeedback(feedbackRecord)
+        firestoreService.syncFeedback(feedbackRecord)
     }
 
     suspend fun markFeedbackReviewed(id: String) {
@@ -198,6 +241,11 @@ class SabiRepository(
 
     suspend fun saveUserPreferences(preferences: UserPreferencesEntity) {
         sabiDao.saveUserPreferences(preferences)
+        firestoreService.syncUserPreferences(preferences)
+    }
+
+    suspend fun getFirestoreAggregatedMetrics(localConvCount: Int = 0, localMsgCount: Int = 0): com.example.data.remote.FirestoreAggregatedMetrics {
+        return firestoreService.fetchAggregatedMetrics(localConvCount, localMsgCount)
     }
 
     fun searchKnowledge(query: String): Flow<List<DocumentEntity>> {

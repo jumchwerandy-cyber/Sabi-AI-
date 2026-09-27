@@ -14,6 +14,9 @@ interface SabiDao {
     @Query("SELECT * FROM conversations ORDER BY isPinned DESC, updatedAt DESC")
     fun getAllConversations(): Flow<List<ConversationEntity>>
 
+    @Query("SELECT * FROM conversations WHERE title LIKE '%' || :query || '%' OR lastMessage LIKE '%' || :query || '%' ORDER BY isPinned DESC, updatedAt DESC")
+    fun searchConversations(query: String): Flow<List<ConversationEntity>>
+
     @Query("SELECT * FROM conversations WHERE id = :id LIMIT 1")
     suspend fun getConversationById(id: String): ConversationEntity?
 
@@ -23,8 +26,17 @@ interface SabiDao {
     @Update
     suspend fun updateConversation(conversation: ConversationEntity)
 
+    @Query("UPDATE conversations SET isPinned = :isPinned WHERE id = :id")
+    suspend fun setConversationPinned(id: String, isPinned: Boolean)
+
     @Query("DELETE FROM conversations WHERE id = :id")
     suspend fun deleteConversationById(id: String)
+
+    @Query("DELETE FROM conversations")
+    suspend fun deleteAllConversations()
+
+    @Query("SELECT COUNT(*) FROM conversations")
+    fun getConversationCount(): Flow<Int>
 
     // Messages
     @Query("SELECT * FROM messages WHERE conversationId = :convId ORDER BY timestamp ASC")
@@ -32,6 +44,12 @@ interface SabiDao {
 
     @Query("SELECT * FROM messages WHERE conversationId = :convId ORDER BY timestamp ASC")
     suspend fun getMessageListForConversation(convId: String): List<MessageEntity>
+
+    @Query("SELECT * FROM messages WHERE content LIKE '%' || :query || '%' ORDER BY timestamp DESC")
+    fun searchMessages(query: String): Flow<List<MessageEntity>>
+
+    @Query("SELECT COUNT(*) FROM messages")
+    fun getTotalMessageCount(): Flow<Int>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMessage(message: MessageEntity)

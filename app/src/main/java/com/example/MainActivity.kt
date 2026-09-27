@@ -42,23 +42,25 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         val database = SabiDatabase.getDatabase(applicationContext, lifecycleScope)
-        val repository = SabiRepository(database.sabiDao())
+        val preferencesDataStore = com.example.data.local.SabiPreferencesDataStore(applicationContext)
+        val repository = SabiRepository(database.sabiDao(), preferencesDataStore = preferencesDataStore)
         val factory = SabiViewModelFactory(repository)
 
         setContent {
             SabiAiTheme {
                 val viewModel: SabiViewModel = viewModel(factory = factory)
-                SabiAppContent(viewModel)
+                SabiAppContent(viewModel, repository)
             }
         }
     }
 }
 
 @Composable
-fun SabiAppContent(viewModel: SabiViewModel) {
+fun SabiAppContent(viewModel: SabiViewModel, repository: SabiRepository) {
     val context = LocalContext.current
     val currentScreen by viewModel.currentScreen.collectAsStateWithLifecycle()
     val conversations by viewModel.conversations.collectAsStateWithLifecycle()
+    val conversationSearchQuery by viewModel.conversationSearchQuery.collectAsStateWithLifecycle()
     val activeConversationId by viewModel.activeConversationId.collectAsStateWithLifecycle()
     val activeMessages by viewModel.activeMessages.collectAsStateWithLifecycle()
     val selectedLanguage by viewModel.selectedLanguage.collectAsStateWithLifecycle()
@@ -80,6 +82,8 @@ fun SabiAppContent(viewModel: SabiViewModel) {
     val assistantResult by viewModel.assistantResultText.collectAsStateWithLifecycle()
     val assistantTool by viewModel.assistantToolType.collectAsStateWithLifecycle()
     val isAssistantProcessing by viewModel.isAssistantProcessing.collectAsStateWithLifecycle()
+    val firestoreMetrics by viewModel.firestoreMetrics.collectAsStateWithLifecycle()
+    val isLoadingMetrics by viewModel.isLoadingMetrics.collectAsStateWithLifecycle()
 
     val allFeedback by viewModel.allFeedback.collectAsStateWithLifecycle()
     val userPreferences by viewModel.userPreferences.collectAsStateWithLifecycle()
@@ -87,6 +91,10 @@ fun SabiAppContent(viewModel: SabiViewModel) {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val coroutineScope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+
+    // Firebase Auth & Credential Manager
+    val authManager = remember { com.example.data.auth.SabiAuthManager(context, repository, coroutineScope) }
+    val authState by authManager.authState.collectAsStateWithLifecycle()
 
     // Voice Input Manager
     val voiceInputManager = remember { VoiceInputManager(context) }
@@ -97,9 +105,14 @@ fun SabiAppContent(viewModel: SabiViewModel) {
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         if (isGranted) {
-            voiceInputManager.startListening { transcribedText ->
-                viewModel.setInputText(transcribedText)
-            }
+            voiceInputManager.startListening(
+                onPartialResult = { partial ->
+                    viewModel.setInputText(partial)
+                },
+                onFinalResult = { transcribedText ->
+                    viewModel.setInputText(transcribedText)
+                }
+            )
         } else {
             coroutineScope.launch {
                 snackbarHostState.showSnackbar("Microphone permission is needed to speak with SABI AI.")
@@ -131,6 +144,9 @@ fun SabiAppContent(viewModel: SabiViewModel) {
                 currentScreen = currentScreen,
                 conversations = conversations,
                 activeConversationId = activeConversationId,
+                searchQuery = conversationSearchQuery,
+                onSearchQueryChange = { query -> viewModel.setConversationSearchQuery(query) },
+                onTogglePinConversation = { id, pinned -> viewModel.togglePinConversation(id, pinned) },
                 onNavigate = { screen -> viewModel.navigateTo(screen) },
                 onSelectConversation = { convId -> viewModel.selectConversation(convId) },
                 onNewChat = { viewModel.startNewChat() },
@@ -283,9 +299,14 @@ fun SabiAppContent(viewModel: SabiViewModel) {
                                         android.Manifest.permission.RECORD_AUDIO
                                     ) == PackageManager.PERMISSION_GRANTED
                                     if (hasPermission) {
-                                        voiceInputManager.startListening { transcribedText ->
-                                            viewModel.setInputText(transcribedText)
-                                        }
+                                        voiceInputManager.startListening(
+                                            onPartialResult = { partial ->
+                                                viewModel.setInputText(partial)
+                                            },
+                                            onFinalResult = { transcribedText ->
+                                                viewModel.setInputText(transcribedText)
+                                            }
+                                        )
                                     } else {
                                         audioPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
                                     }
@@ -327,12 +348,34 @@ fun SabiAppContent(viewModel: SabiViewModel) {
                         AdminScreen(
                             conversations = conversations,
                             feedbackList = allFeedback,
+                            metrics = firestoreMetrics,
+                            isLoadingMetrics = isLoadingMetrics,
+                            onRefreshMetrics = { viewModel.refreshFirestoreMetrics() },
                             onMarkReviewed = { feedbackId -> viewModel.markAdminFeedbackReviewed(feedbackId) }
                         )
                     }
                     SabiScreen.PROFILE -> {
                         ProfileScreen(
                             userPreferences = userPreferences,
+                            isGoogleSignedIn = authState.isSignedIn && authState.isGoogleUser,
+                            onGoogleSignIn = {
+                                coroutineScope.launch {
+                                    authManager.signInWithGoogle(
+                                        activityContext = context,
+                                        onSuccess = { msg ->
+                                            coroutineScope.launch { snackbarHostState.showSnackbar(msg) }
+                                        },
+                                        onError = { err ->
+                                            coroutineScope.launch { snackbarHostState.showSnackbar(err) }
+                                        }
+                                    )
+                                }
+                            },
+                            onSignOut = {
+                                authManager.signOut {
+                                    coroutineScope.launch { snackbarHostState.showSnackbar("Signed out successfully.") }
+                                }
+                            },
                             onSavePreferences = { name, email, lang, mode ->
                                 viewModel.saveProfilePreferences(name, email, lang, mode)
                             }

@@ -10,7 +10,6 @@ import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import java.util.Locale
 
 sealed class VoiceState {
     object Idle : VoiceState()
@@ -23,6 +22,14 @@ class VoiceInputManager(private val context: Context) {
 
     companion object {
         private const val TAG = "VoiceInputManager"
+
+        val SAMPLE_VOICE_PROMPTS = listOf(
+            "How much be 1 dollar to naira black market today?",
+            "Abeg help me write a polite email to my landlord for repair",
+            "Tell me about the ancient Benin Kingdom and bronze art",
+            "How can I register my small business with CAC in Nigeria?",
+            "Explain how POS agency banking works with OPay or Moniepoint"
+        )
     }
 
     private var speechRecognizer: SpeechRecognizer? = null
@@ -37,9 +44,12 @@ class VoiceInputManager(private val context: Context) {
         return SpeechRecognizer.isRecognitionAvailable(context)
     }
 
-    fun startListening(onResult: (String) -> Unit) {
+    fun startListening(
+        onPartialResult: (String) -> Unit = {},
+        onFinalResult: (String) -> Unit
+    ) {
         if (!isSpeechAvailable()) {
-            _voiceState.value = VoiceState.Error("Speech recognition is not available on this device.")
+            _voiceState.value = VoiceState.Error("Speech recognition is not available on this emulator/device.")
             return
         }
 
@@ -49,12 +59,12 @@ class VoiceInputManager(private val context: Context) {
             speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context).apply {
                 setRecognitionListener(object : RecognitionListener {
                     override fun onReadyForSpeech(params: Bundle?) {
-                        Log.d(TAG, "onReadyForSpeech")
+                        Log.d(TAG, "onReadyForSpeech: Ready to capture voice")
                         _voiceState.value = VoiceState.Listening
                     }
 
                     override fun onBeginningOfSpeech() {
-                        Log.d(TAG, "onBeginningOfSpeech")
+                        Log.d(TAG, "onBeginningOfSpeech: User started speaking")
                         _voiceState.value = VoiceState.Listening
                     }
 
@@ -65,21 +75,21 @@ class VoiceInputManager(private val context: Context) {
                     override fun onBufferReceived(buffer: ByteArray?) {}
 
                     override fun onEndOfSpeech() {
-                        Log.d(TAG, "onEndOfSpeech")
+                        Log.d(TAG, "onEndOfSpeech: User stopped speaking")
                     }
 
                     override fun onError(error: Int) {
                         val message = when (error) {
-                            SpeechRecognizer.ERROR_AUDIO -> "Audio recording error."
-                            SpeechRecognizer.ERROR_CLIENT -> "Client error occurred."
-                            SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Audio recording permission missing."
-                            SpeechRecognizer.ERROR_NETWORK -> "Network connection error for speech."
-                            SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Speech recognition network timeout."
-                            SpeechRecognizer.ERROR_NO_MATCH -> "No speech detected. Please speak clearly into your mic."
+                            SpeechRecognizer.ERROR_AUDIO -> "Audio recording error. Check your microphone."
+                            SpeechRecognizer.ERROR_CLIENT -> "Speech recognition client error. Please retry."
+                            SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Microphone permission required."
+                            SpeechRecognizer.ERROR_NETWORK -> "Network error. Please check your internet connection."
+                            SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Network timeout while processing speech."
+                            SpeechRecognizer.ERROR_NO_MATCH -> "No speech detected. Abeg speak clearly into mic."
                             SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "Speech service is busy. Please try again."
-                            SpeechRecognizer.ERROR_SERVER -> "Server error occurred."
-                            SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "No speech detected before timeout."
-                            else -> "Could not transcribe speech (Error: $error)"
+                            SpeechRecognizer.ERROR_SERVER -> "Google speech server error. Try again shortly."
+                            SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "No speech heard before timeout."
+                            else -> "Voice recognition error (code $error)."
                         }
                         Log.w(TAG, "SpeechRecognizer error: $message")
                         _voiceState.value = VoiceState.Error(message)
@@ -89,8 +99,9 @@ class VoiceInputManager(private val context: Context) {
                         val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                         val text = matches?.firstOrNull()?.trim()
                         if (!text.isNullOrBlank()) {
+                            Log.d(TAG, "Transcribed speech: $text")
                             _voiceState.value = VoiceState.Transcribed(text)
-                            onResult(text)
+                            onFinalResult(text)
                         } else {
                             _voiceState.value = VoiceState.Error("Could not recognize clear speech.")
                         }
@@ -98,9 +109,12 @@ class VoiceInputManager(private val context: Context) {
 
                     override fun onPartialResults(partialResults: Bundle?) {
                         val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                        val partial = matches?.firstOrNull()
+                        val partial = matches?.firstOrNull()?.trim()
                         if (!partial.isNullOrBlank()) {
+                            Log.d(TAG, "Partial speech: $partial")
                             _voiceState.value = VoiceState.Transcribed(partial)
+                            // Live stream directly to chat message input field
+                            onPartialResult(partial)
                         }
                     }
 
@@ -116,6 +130,7 @@ class VoiceInputManager(private val context: Context) {
                 putExtra(RecognizerIntent.EXTRA_SUPPORTED_LANGUAGES, arrayListOf("en-NG", "en-GB", "en-US"))
                 putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
                 putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+                putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak to SABI AI in English, Pidgin, or Hausa/Yoruba/Igbo")
             }
 
             speechRecognizer?.startListening(intent)
@@ -124,6 +139,19 @@ class VoiceInputManager(private val context: Context) {
             Log.e(TAG, "Failed to start speech recognizer", e)
             _voiceState.value = VoiceState.Error("Failed to initialize microphone: ${e.message}")
         }
+    }
+
+    // Overload for simple single callback
+    fun startListening(onResult: (String) -> Unit) {
+        startListening(
+            onPartialResult = onResult,
+            onFinalResult = onResult
+        )
+    }
+
+    fun transcribeSample(sample: String, onResult: (String) -> Unit) {
+        _voiceState.value = VoiceState.Transcribed(sample)
+        onResult(sample)
     }
 
     fun stopListening() {

@@ -31,6 +31,9 @@ fun SabiDrawerContent(
     currentScreen: SabiScreen,
     conversations: List<ConversationEntity>,
     activeConversationId: String?,
+    searchQuery: String = "",
+    onSearchQueryChange: (String) -> Unit = {},
+    onTogglePinConversation: (String, Boolean) -> Unit = { _, _ -> },
     onNavigate: (SabiScreen) -> Unit,
     onSelectConversation: (String) -> Unit,
     onNewChat: () -> Unit,
@@ -183,17 +186,101 @@ fun SabiDrawerContent(
             HorizontalDivider(
                 color = SabiNavyBorder,
                 thickness = 1.dp,
-                modifier = Modifier.padding(vertical = 12.dp)
+                modifier = Modifier.padding(vertical = 10.dp)
             )
 
-            // Conversation History Title
-            Text(
-                text = "CONVERSATIONS",
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.Bold,
-                color = SabiTextMuted,
-                modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+            // Conversation History Title & Offline Storage Badge
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "OFFLINE SESSIONS",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = SabiTextMuted
+                )
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = SabiNavyElevated,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, SabiNavyBorder)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(6.dp)
+                                .clip(CircleShape)
+                                .background(SabiGreenGlow)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "Room DB",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = SabiGreenGlow,
+                            fontSize = 10.sp
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            // Search Past Sessions TextField
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = onSearchQueryChange,
+                placeholder = {
+                    Text(
+                        text = "Search past interactions...",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = SabiTextMuted
+                    )
+                },
+                leadingIcon = {
+                    Icon(
+                        Icons.Default.Search,
+                        contentDescription = "Search",
+                        tint = SabiTextMuted,
+                        modifier = Modifier.size(16.dp)
+                    )
+                },
+                trailingIcon = {
+                    if (searchQuery.isNotBlank()) {
+                        IconButton(
+                            onClick = { onSearchQueryChange("") },
+                            modifier = Modifier.size(20.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = "Clear",
+                                tint = SabiTextMuted,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+                    .testTag("drawer_search_conversations"),
+                shape = RoundedCornerShape(10.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = SabiGreenPrimary,
+                    unfocusedBorderColor = SabiNavyBorder,
+                    focusedTextColor = SabiTextPrimary,
+                    unfocusedTextColor = SabiTextPrimary,
+                    cursorColor = SabiGreenPrimary
+                ),
+                singleLine = true
             )
+
+            Spacer(modifier = Modifier.height(8.dp))
 
             // History List
             if (conversations.isEmpty()) {
@@ -204,7 +291,7 @@ fun SabiDrawerContent(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "No chats yet. Start a conversation!",
+                        text = if (searchQuery.isNotBlank()) "No sessions matching \"$searchQuery\"" else "No chats yet. Start a conversation!",
                         style = MaterialTheme.typography.bodySmall,
                         color = SabiTextMuted
                     )
@@ -232,24 +319,41 @@ fun SabiDrawerContent(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                                    .padding(horizontal = 8.dp, vertical = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(
-                                    imageVector = if (conv.isPinned) Icons.Default.PushPin else Icons.Default.ChatBubble,
-                                    contentDescription = null,
-                                    tint = if (isSelected) SabiGreenGlow else SabiTextSecondary,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Text(
-                                    text = conv.title,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = if (isSelected) SabiTextPrimary else SabiTextSecondary,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f)
-                                )
+                                IconButton(
+                                    onClick = { onTogglePinConversation(conv.id, conv.isPinned) },
+                                    modifier = Modifier.size(24.dp).testTag("pin_conv_${conv.id}")
+                                ) {
+                                    Icon(
+                                        imageVector = if (conv.isPinned) Icons.Default.PushPin else Icons.Default.ChatBubbleOutline,
+                                        contentDescription = if (conv.isPinned) "Unpin" else "Pin",
+                                        tint = if (conv.isPinned) SabiGold else (if (isSelected) SabiGreenGlow else SabiTextMuted),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = conv.title,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = if (isSelected || conv.isPinned) FontWeight.SemiBold else FontWeight.Normal,
+                                        color = if (isSelected) SabiTextPrimary else SabiTextSecondary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    if (conv.lastMessage.isNotBlank()) {
+                                        Text(
+                                            text = conv.lastMessage,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = SabiTextMuted,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            fontSize = 11.sp
+                                        )
+                                    }
+                                }
                                 IconButton(
                                     onClick = { onDeleteConversation(conv.id) },
                                     modifier = Modifier
